@@ -1,5 +1,5 @@
 use clap::Parser;
-use lora::utilities::CodeRate;
+use lora::utils::CodeRate;
 use std::time::Duration;
 
 use futuresdr::anyhow::Result;
@@ -9,8 +9,8 @@ use futuresdr::runtime::buffer::circular::Circular;
 use futuresdr::runtime::Flowgraph;
 use futuresdr::runtime::Pmt;
 use futuresdr::runtime::Runtime;
-use lora::utilities::Bandwidth;
-use lora::utilities::SpreadingFactor;
+use lora::utils::Bandwidth;
+use lora::utils::SpreadingFactor;
 
 use futuresdr::blocks::*;
 use futuresdr::futures::channel::mpsc;

@@ -24,7 +24,7 @@ use std::io::{BufReader, Read};
 
 use futuresdr::blocks::*;
 use futuresdr::runtime::Flowgraph;
-use lora::utilities::{Bandwidth, CodeRate, SpreadingFactor};
+use lora::utils::{Bandwidth, CodeRate, SpreadingFactor};
 use lora::*;
 use wlan::*;
 
@@ -98,6 +98,7 @@ pub fn create_lora_receiver(
         None,
         None,
         false,
+        None,
     );
 
     let fft_demod = FftDemod::new(soft_decoding, spreading_factor.into());

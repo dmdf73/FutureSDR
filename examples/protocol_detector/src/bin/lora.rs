@@ -13,9 +13,9 @@ use futuresdr::runtime::Pmt;
 use futuresdr::runtime::Runtime;
 use futuresdr::runtime::{Block, Flowgraph};
 use futuresdr::tracing::info;
-use lora::utilities::Bandwidth;
-use lora::utilities::CodeRate;
-use lora::utilities::SpreadingFactor;
+use lora::utils::Bandwidth;
+use lora::utils::CodeRate;
+use lora::utils::SpreadingFactor;
 use lora::Decoder;
 use lora::Deinterleaver;
 use lora::FftDemod;
@@ -93,6 +93,7 @@ fn create_lora_receiver(mut fg: Flowgraph, input: usize, args: &Args) -> Result<
         None,
         None,
         false,
+        None,
     );
 
     let fft_demod = FftDemod::new(args.soft_decoding, args.spreading_factor.into());
