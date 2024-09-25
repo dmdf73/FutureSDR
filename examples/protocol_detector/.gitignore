@@ -1,0 +1,21 @@
+/target/
+**/*.rs.bk
+
+# Ignore backups
+**/*~
+
+# Ignore Cargo.lock (if you're using a library)
+/Cargo.lock
+
+# Ignore all .DS_Store files (common on macOS)
+.DS_Store
+
+# Ignore all txt, log, LOG, and bin files
+*.txt
+*.log
+*.LOG
+*.bin
+
+# Optional: Ignore specific IDE files (VS Code example)
+.vscode/
+.idea/
