@@ -33,7 +33,7 @@ const PAD_TAIL: usize = 100;
 #[derive(Parser, Debug)]
 #[clap(version)]
 struct Args {
-    #[clap(long, default_value_t = 0.001)]
+    #[clap(long, default_value_t = 0.01)]
     tx_interval: f32,
     #[clap(long, value_enum, default_value_t = SpreadingFactor::SF7)]
     spreading_factor: SpreadingFactor,
@@ -82,11 +82,6 @@ fn main() -> Result<()> {
         args.sync_word,
     )?;
 
-    let tag_inserter = SimpleTagInserter::new(20000, vec!["burst_start".to_string()]);
-    let tag_inserter_block = fg.add_block(tag_inserter);
-
-    fg.connect_stream(lora_tx, "out", tag_inserter_block, "in")?;
-
     let ports = vec![
         ("wifi".to_string(), "burst_start".to_string()),
         ("lora".to_string(), "burst_start".to_string()),
@@ -112,7 +107,7 @@ fn main() -> Result<()> {
         Circular::with_size(prefix_out_size),
     )?;
     fg.connect_stream_with_type(
-        tag_inserter_block,
+        lora_tx,
         "out",
         inserter_block,
         "lora",

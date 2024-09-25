@@ -11,6 +11,7 @@ use futuresdr::runtime::MessageIoBuilder;
 use futuresdr::runtime::Pmt;
 use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
+use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
 use futuresdr::tracing::warn;
 use std::collections::VecDeque;
@@ -116,6 +117,10 @@ impl Kernel for Transmitter {
         }
 
         let n = std::cmp::min(out.len(), self.current_frame.len() - self.current_offset);
+        if n > 0 && self.current_offset == 0 {
+            sio.output(0).add_tag(0, Tag::NamedUsize("burst_start".to_string(), self.current_frame.len()));
+        }
+
         unsafe {
             std::ptr::copy_nonoverlapping(
                 self.current_frame.as_ptr().add(self.current_offset),
