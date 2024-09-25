@@ -108,15 +108,11 @@ pub fn create_lora_receiver(
     let header_decoder = HeaderDecoder::new(HeaderMode::Explicit, false);
     let decoder = lora::Decoder::new();
 
-    let udp_data = BlobToUdp::new("127.0.0.1:55555");
-    let udp_rftap = BlobToUdp::new("127.0.0.1:55556");
     connect!(fg,
         input [Circular::with_size((1 << usize::from(spreading_factor)) * 3 * oversampling)] frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
         header_decoder.frame_info | frame_sync.frame_info;
         header_decoder | decoder;
         decoder.crc_check | frame_sync.payload_crc_result;
-        decoder.out | udp_data;
-        decoder.rftap | udp_rftap;
     );
 
     Ok((decoder, fg))
