@@ -17,7 +17,7 @@ use futuresdr::futures::channel::mpsc;
 use futuresdr::futures::StreamExt;
 use protocol_detector::{
     generate_zadoff_chu, MultiPortInserter, Protocol, ProtocolDetectorFFT, Sequence,
-    SimpleTagInserter,
+    // SimpleTagInserter,
 };
 use rand_distr::{Distribution, Normal};
 use wlan::*;
@@ -82,9 +82,9 @@ fn main() -> Result<()> {
         sequences: vec![Sequence::new(zigbee_sequence.clone(), 0.7)],
     };
 
-    let (wifi_tx, wifi_tx_output, mut fg) = create_wifi_transmitter(fg)?;
-    let (zigbee_tx, zigbee_tx_output, mut fg) = create_zigbee_transmitter(fg)?;
-    let (mut fg, lora_tx, lora_circular_buffer, lora_tx_port) = create_lora_transmitter(
+    let (wifi_tx, wifi_tx_output, fg) = create_wifi_transmitter(fg)?;
+    let (zigbee_tx, zigbee_tx_output, fg) = create_zigbee_transmitter(fg)?;
+    let (mut fg, lora_tx, _lora_circular_buffer, _lora_tx_port) = create_lora_transmitter(
         fg,
         args.code_rate,
         args.spreading_factor,
@@ -155,8 +155,8 @@ fn main() -> Result<()> {
     println!("Added block pass with ID: {}", pass);
     fg.connect_stream(detector_block, "lora", pass, "in")?;
 
-    let (wifi_rx, mut fg) = create_wifi_receiver(fg, detector_block)?;
-    let (zigbee_rx, mut fg) = create_zigbee_receiver(fg, detector_block)?;
+    let (wifi_rx, fg) = create_wifi_receiver(fg, detector_block)?;
+    let (zigbee_rx, fg) = create_zigbee_receiver(fg, detector_block)?;
     let (lora_rx, mut fg) = create_lora_receiver(
         fg,
         pass,
@@ -185,7 +185,7 @@ fn main() -> Result<()> {
     rt.spawn_background(async move {
         let mut counter: usize = 0;
         loop {
-            let mut wifi_payload = format!("Wifi");
+            let wifi_payload = format!("Wifi");
             if counter % 3 == 0 {
                 handle
                     .call(
