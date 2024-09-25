@@ -82,8 +82,8 @@ fn main() -> Result<()> {
         sequences: vec![Sequence::new(zigbee_sequence.clone(), 0.7)],
     };
 
-    let (wifi_tx_mac, wifi_tx_output, mut fg) = create_wifi_transmitter(fg)?;
-    let (zigbee_tx_mac, zigbee_tx_output, mut fg) = create_zigbee_transmitter(fg)?;
+    let (wifi_tx, wifi_tx_output, mut fg) = create_wifi_transmitter(fg)?;
+    let (zigbee_tx, zigbee_tx_output, mut fg) = create_zigbee_transmitter(fg)?;
     let (mut fg, lora_tx, lora_circular_buffer, lora_tx_port) = create_lora_transmitter(
         fg,
         args.code_rate,
@@ -155,9 +155,9 @@ fn main() -> Result<()> {
     println!("Added block pass with ID: {}", pass);
     fg.connect_stream(detector_block, "lora", pass, "in")?;
 
-    let (wifi_rx_decoder, mut fg) = create_wifi_receiver(fg, detector_block)?;
-    let (zigbee_rx_decoder, mut fg) = create_zigbee_receiver(fg, detector_block)?;
-    let mut fg = create_lora_receiver(
+    let (wifi_rx, mut fg) = create_wifi_receiver(fg, detector_block)?;
+    let (zigbee_rx, mut fg) = create_zigbee_receiver(fg, detector_block)?;
+    let (lora_rx, mut fg) = create_lora_receiver(
         fg,
         pass,
         args.bandwidth,
@@ -168,9 +168,18 @@ fn main() -> Result<()> {
     )?;
 
     let rt = Runtime::new();
-    let (tx_frame, rx_frame) = mpsc::channel::<Pmt>(100);
-    let message_pipe = fg.add_block(MessagePipe::new(tx_frame));
-    fg.connect_message(wifi_rx_decoder, "rx_frames", message_pipe, "in")?;
+    let (wifi_tx_frame, wifi_rx_frame) = mpsc::channel::<Pmt>(100);
+    let message_pipe = fg.add_block(MessagePipe::new(wifi_tx_frame));
+    fg.connect_message(wifi_rx, "rx_frames", message_pipe, "in")?;
+
+    let (lora_tx_frame, lora_rx_frame) = mpsc::channel::<Pmt>(100);
+    let message_pipe = fg.add_block(MessagePipe::new(lora_tx_frame));
+    fg.connect_message(lora_rx, "out", message_pipe, "in")?;
+
+    let (zigbee_tx_frame, zigbee_rx_frame) = mpsc::channel::<Pmt>(100);
+    let message_pipe = fg.add_block(MessagePipe::new(zigbee_tx_frame));
+    fg.connect_message(zigbee_rx, "out", message_pipe, "in")?;
+
 
     let (_fg, mut handle) = rt.start_sync(fg);
     rt.spawn_background(async move {
@@ -180,7 +189,7 @@ fn main() -> Result<()> {
             if counter % 3 == 0 {
                 handle
                     .call(
-                        wifi_tx_mac,
+                        wifi_tx,
                         0,
                         Pmt::Any(Box::new((wifi_payload.as_bytes().to_vec(), Mcs::Qam16_1_2))),
                     )
@@ -193,7 +202,7 @@ fn main() -> Result<()> {
                     .unwrap();
             } else {
                 handle
-                    .call(zigbee_tx_mac, "tx", Pmt::Blob(wifi_payload.as_bytes().to_vec()))
+                    .call(zigbee_tx, "tx", Pmt::Blob(wifi_payload.as_bytes().to_vec()))
                     .await
                     .unwrap();
             }
@@ -204,17 +213,42 @@ fn main() -> Result<()> {
         }
     });
 
-    rt.block_on(async move {
-        let mut rx_frame = rx_frame;
-        while let Some(x) = rx_frame.next().await {
+    rt.spawn_background(async move {
+        let mut wifi_rx_frame = wifi_rx_frame;
+        while let Some(x) = wifi_rx_frame.next().await {
             match x {
                 Pmt::Blob(data) => {
-                    println!("Received frame length: {:?} bytes", data.len());
+                    println!("Received wifi frame length: {:?} bytes", data.len());
                 }
-                _ => break,
+                _ => panic!("wrong pmt"),
             }
         }
     });
+
+    rt.spawn_background(async move {
+        let mut lora_rx_frame = lora_rx_frame;
+        while let Some(x) = lora_rx_frame.next().await {
+            match x {
+                Pmt::Blob(data) => {
+                    println!("Received lora frame length: {:?} bytes", data.len());
+                }
+                _ => panic!("wrong pmt"),
+            }
+        }
+    });
+
+    rt.block_on(async move {
+        let mut zigbee_rx_frame = zigbee_rx_frame;
+        while let Some(x) = zigbee_rx_frame.next().await {
+            match x {
+                Pmt::Blob(data) => {
+                    println!("Received zigbee frame length: {:?} bytes", data.len());
+                }
+                _ => panic!("wrong pmt"),
+            }
+        }
+    });
+
 
     Ok(())
 }

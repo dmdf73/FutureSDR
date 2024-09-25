@@ -155,7 +155,6 @@ impl Kernel for Decoder {
                                 *byte = None;
                                 if data.len() == *len {
                                     // info!("decoded frame");
-                                    println!("zigbee received frame");
                                     mio.post(0, Pmt::Blob(std::mem::take(data))).await;
                                     self.state = State::Search;
                                 }

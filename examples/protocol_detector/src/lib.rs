@@ -87,7 +87,7 @@ pub fn create_lora_receiver(
     oversampling: usize,
     sync_word: usize,
     soft_decoding: bool,
-) -> Result<Flowgraph> {
+) -> Result<(usize, Flowgraph)> {
     let frame_sync = FrameSync::new(
         868_000_000,
         bandwidth.into(),
@@ -119,7 +119,7 @@ pub fn create_lora_receiver(
         decoder.rftap | udp_rftap;
     );
 
-    Ok(fg)
+    Ok((decoder, fg))
 }
 
 use zigbee::modulator;
