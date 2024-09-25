@@ -29,7 +29,6 @@ rand_distr = "0.4"
 byteorder = "1.4"
 rustfft = "6.2.0"  # oder die neueste Version, falls verfügbar
 num-complex = "0.4"  # oder die neueste Version, falls verfügbar"
-fftw = "0.8.0"
 [dependencies.wlan]
 path = "../wlan"
 [dependencies.lora]
