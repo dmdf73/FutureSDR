@@ -26,6 +26,8 @@ use protocol_detector::create_lora_receiver;
 use protocol_detector::create_lora_transmitter;
 use protocol_detector::create_wifi_receiver;
 use protocol_detector::create_wifi_transmitter;
+use protocol_detector::create_zigbee_receiver;
+use protocol_detector::create_zigbee_transmitter;
 
 const PAD_FRONT: usize = 100;
 const PAD_TAIL: usize = 100;
@@ -57,6 +59,7 @@ fn main() -> Result<()> {
     let sync_sequence = generate_zadoff_chu(11, 64, 0);
     let wifi_sequence = generate_zadoff_chu(17, 64, 0);
     let lora_sequence = generate_zadoff_chu(23, 64, 0);
+    let zigbee_sequence = generate_zadoff_chu(25, 64, 0);
 
     let wifi_protocol = Protocol {
         name: "wifi".to_string(),
@@ -73,7 +76,14 @@ fn main() -> Result<()> {
         sequences: vec![Sequence::new(lora_sequence.clone(), 0.7)],
     };
 
+    let zigbee_protocol = Protocol {
+        name: "zigbee".to_string(),
+        sequence: Sequence::new([sync_sequence.clone(), zigbee_sequence.clone()].concat(), 0.7),
+        sequences: vec![Sequence::new(zigbee_sequence.clone(), 0.7)],
+    };
+
     let (wifi_tx_mac, wifi_tx_output, mut fg) = create_wifi_transmitter(fg)?;
+    let (zigbee_tx_mac, zigbee_tx_output, mut fg) = create_zigbee_transmitter(fg)?;
     let (mut fg, lora_tx, lora_circular_buffer, lora_tx_port) = create_lora_transmitter(
         fg,
         args.code_rate,
@@ -85,10 +95,12 @@ fn main() -> Result<()> {
     let ports = vec![
         ("wifi".to_string(), "burst_start".to_string()),
         ("lora".to_string(), "burst_start".to_string()),
+        ("zigbee".to_string(), "burst_start".to_string()),
     ];
     let wifi_combined = [sync_sequence.clone(), wifi_sequence.clone()].concat();
     let lora_combined = [sync_sequence.clone(), lora_sequence.clone()].concat();
-    let inserter = MultiPortInserter::new(ports, vec![wifi_combined, lora_combined], 30, 30);
+    let zigbee_combined = [sync_sequence.clone(), zigbee_sequence.clone()].concat();
+    let inserter = MultiPortInserter::new(ports, vec![wifi_combined, lora_combined, zigbee_combined], 30, 30);
     let inserter_block = fg.add_block(inserter);
     println!("Added block with ID: {}", inserter_block);
     let mut size = 4096;
@@ -113,6 +125,13 @@ fn main() -> Result<()> {
         "lora",
         Circular::with_size(prefix_out_size),
     )?;
+    fg.connect_stream_with_type(
+        zigbee_tx_output,
+        "out",
+        inserter_block,
+        "zigbee",
+        Circular::with_size(prefix_out_size),
+    )?;
 
     let normal = Normal::new(0.0f32, 0.001).unwrap();
     let noise = fg.add_block(Apply::new(move |i: &Complex32| -> Complex32 {
@@ -125,7 +144,7 @@ fn main() -> Result<()> {
 
     let detector = ProtocolDetectorFFT::new(
         Sequence::new(sync_sequence.clone(), 0.75),
-        vec![wifi_protocol, lora_protocol],
+        vec![wifi_protocol, lora_protocol, zigbee_protocol],
         true,
         Some("matches.log".to_owned()),
     );
@@ -137,6 +156,7 @@ fn main() -> Result<()> {
     fg.connect_stream(detector_block, "lora", pass, "in")?;
 
     let (wifi_rx_decoder, mut fg) = create_wifi_receiver(fg, detector_block)?;
+    let (zigbee_rx_decoder, mut fg) = create_zigbee_receiver(fg, detector_block)?;
     let mut fg = create_lora_receiver(
         fg,
         pass,
@@ -157,7 +177,7 @@ fn main() -> Result<()> {
         let mut counter: usize = 0;
         loop {
             let mut wifi_payload = format!("Wifi");
-            if counter % 2 == 0 {
+            if counter % 3 == 0 {
                 handle
                     .call(
                         wifi_tx_mac,
@@ -166,9 +186,14 @@ fn main() -> Result<()> {
                     )
                     .await
                     .unwrap();
-            } else {
+            } else if counter % 3 == 1 {
                 handle
                     .call(lora_tx, 0, Pmt::String(wifi_payload))
+                    .await
+                    .unwrap();
+            } else {
+                handle
+                    .call(zigbee_tx_mac, "tx", Pmt::Blob(wifi_payload.as_bytes().to_vec()))
                     .await
                     .unwrap();
             }

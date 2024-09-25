@@ -122,6 +122,45 @@ pub fn create_lora_receiver(
     Ok(fg)
 }
 
+use zigbee::modulator;
+use zigbee::IqDelay;
+use zigbee::ClockRecoveryMm;
+
+pub fn create_zigbee_transmitter(mut fg: Flowgraph) -> Result<(usize, usize, Flowgraph)> {
+    let mac = fg.add_block(zigbee::Mac::new());
+    let modulator = fg.add_block(modulator());
+    let iq_delay = fg.add_block(IqDelay::new());
+
+    fg.connect_stream(mac, "out", modulator, "in")?;
+    fg.connect_stream(modulator, "out", iq_delay, "in")?;
+
+    Ok((mac, iq_delay, fg))
+}
+
+pub fn create_zigbee_receiver(mut fg: Flowgraph, src: usize) -> Result<(usize, Flowgraph)> {
+    let mut last: Complex32 = Complex32::new(0.0, 0.0);
+    let mut iir: f32 = 0.0;
+    let alpha = 0.00016;
+    let avg = Apply::new(move |i: &Complex32| -> f32 {
+        let phase = (last.conj() * i).arg();
+        last = *i;
+        iir = (1.0 - alpha) * iir + alpha * phase;
+        phase - iir
+    });
+
+    let omega = 2.0;
+    let gain_omega = 0.000225;
+    let mu = 0.5;
+    let gain_mu = 0.03;
+    let omega_relative_limit = 0.0002;
+    let mm = ClockRecoveryMm::new(omega, gain_omega, mu, gain_mu, omega_relative_limit);
+
+    let decoder = zigbee::Decoder::new(6);
+    connect!(fg, src.zigbee > avg > mm > decoder);
+
+    Ok((decoder, fg))
+}
+
 pub fn create_wifi_transmitter(mut fg: Flowgraph) -> Result<(usize, usize, Flowgraph)> {
     let mac = fg.add_block(Mac::new([0x42; 6], [0x23; 6], [0xff; 6]));
     println!("Added block with ID: {}", mac);
