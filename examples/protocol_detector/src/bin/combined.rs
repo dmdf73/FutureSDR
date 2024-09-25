@@ -33,7 +33,7 @@ const PAD_TAIL: usize = 100;
 #[derive(Parser, Debug)]
 #[clap(version)]
 struct Args {
-    #[clap(long, default_value_t = 0.01)]
+    #[clap(long, default_value_t = 0.1)]
     tx_interval: f32,
     #[clap(long, value_enum, default_value_t = SpreadingFactor::SF7)]
     spreading_factor: SpreadingFactor,
