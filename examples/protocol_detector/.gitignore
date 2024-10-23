@@ -19,3 +19,5 @@
 # Optional: Ignore specific IDE files (VS Code example)
 .vscode/
 .idea/
+*.png
+*.csv

@@ -60,7 +60,7 @@ fn test_multi_protocol_switching() -> Result<()> {
     let head_output_sink = FileSink::<Complex32>::new("head_output.bin");
     let head_output_sink_block = fg.add_block(head_output_sink);
 
-    let detector = ProtocolDetector::new(protocols, true, None);
+    let detector = ProtocolDetector::new(protocols, None, true, None);
     let detector_block = fg.add_block(detector);
 
     let zc_sink = FileSink::<Complex32>::new("zc_output_multi.bin");

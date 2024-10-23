@@ -50,7 +50,7 @@ fn main() -> Result<()> {
     let inserter_block = fg.add_block(inserter);
 
     // Flexible Multi-Protocol Detector
-    let detector = ProtocolDetector::new(protocols, false, None);
+    let detector = ProtocolDetector::new(protocols, None, false, None);
     let detector_block = fg.add_block(detector);
 
     // Head block to limit the number of samples

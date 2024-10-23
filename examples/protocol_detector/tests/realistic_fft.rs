@@ -14,9 +14,9 @@ use protocol_detector::{
 
 fn generate_protocols(include_pad: bool) -> Vec<Protocol> {
     // Adjust the length parameter to 120
-    let sync_sequence = generate_zadoff_chu(11, 64, 0);
-    let zc_sequence = generate_zadoff_chu(17, 64, 0);
-    let gold_sequence = generate_zadoff_chu(31, 64, 0);
+    let sync_sequence = generate_zadoff_chu(11, 64, 0, 0);
+    let zc_sequence = generate_zadoff_chu(17, 64, 0, 0);
+    let gold_sequence = generate_zadoff_chu(31, 64, 0, 0);
     let pad = vec![Complex32::new(0.0, 0.0); 30]; // 30 zeros for padding
 
     vec![
@@ -117,7 +117,7 @@ mod tests {
         let src_block = fg.add_block(Source::new(source_with_protocols));
 
         let detector = ProtocolDetectorFFT::new(
-            Sequence::new(generate_zadoff_chu(11, 64, 0), 0.65),
+            Sequence::new(generate_zadoff_chu(11, 64, 0, 0), 0.65),
             protocols_for_detector,
             true,
             Some("matches.log".to_owned()),

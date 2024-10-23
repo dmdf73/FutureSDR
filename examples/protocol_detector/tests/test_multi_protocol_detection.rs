@@ -1,5 +1,3 @@
-use std::process::exit;
-
 use futuresdr::anyhow::Result;
 use futuresdr::blocks::{FileSink, Head, Source};
 use futuresdr::num_complex::Complex32;
@@ -8,7 +6,8 @@ use futuresdr::runtime::Runtime;
 use protocol_detector::{
     MultiProtocolInserter, Protocol, ProtocolDetector, Sequence, SimpleTagInserter,
 };
-
+use std::fs::File;
+use std::io::{BufWriter, Write};
 #[test]
 fn test_multi_protocol_detection() -> Result<()> {
     let mut fg = Flowgraph::new();
@@ -35,6 +34,7 @@ fn test_multi_protocol_detection() -> Result<()> {
     let head_block = fg.add_block(head);
     let detector = ProtocolDetector::new(
         protocols,
+        None,
         true,
         std::option::Option::Some("prot.log".to_owned()),
     );
@@ -53,8 +53,8 @@ fn test_multi_protocol_detection() -> Result<()> {
     fg.connect_stream(detector_block, "lora", lora_sink_block, "in")?;
 
     Runtime::new().run(fg)?;
-    //exit(1);
-    // Load data from files into vectors
+
+    // Laden der Daten aus den Dateien in Vektoren
     let zc_samples = protocol_detector::load_complex32_from_file("zc_output.bin")?;
     let lora_samples = protocol_detector::load_complex32_from_file("lora_output.bin")?;
 

@@ -55,11 +55,19 @@ pub struct ProtocolDetector {
 
 impl ProtocolDetector {
     pub fn new(
-        protocols: Vec<Protocol>,
+        mut protocols: Vec<Protocol>,
+        sync_sequence: Option<Sequence>,
         debug_enabled: bool,
         debug_log_file: Option<String>,
     ) -> Block {
-        Self::validate_protocols(&protocols).expect("Invalid protocols");
+        Self::validate_protocols(&protocols, &sync_sequence).expect("Invalid protocols");
+        
+        if let Some(sync) = sync_sequence {
+            for protocol in &mut protocols {
+                protocol.sequences.insert(0, sync.clone());
+            }
+        }
+        
         let sequence_lengths: Vec<usize> = protocols[0]
             .sequences
             .iter()
@@ -95,31 +103,30 @@ impl ProtocolDetector {
         )
     }
 
-    fn validate_protocols(protocols: &[Protocol]) -> Result<()> {
+    fn validate_protocols(protocols: &[Protocol], sync_sequence: &Option<Sequence>) -> Result<()> {
         if protocols.is_empty() {
             return Err(anyhow!("No protocols provided"));
         }
-        if protocols.len() == 1 {
-            return Ok(());
+
+        let reference_sequence_length = if let Some(sync) = sync_sequence {
+            sync.data.len()
+        } else {
+            protocols[0].sequences[0].data.len()
+        };
+
+        if let Some(sync) = sync_sequence {
+            if sync.data.len() != reference_sequence_length {
+                return Err(anyhow!("Sync sequence length does not match the reference length"));
+            }
         }
 
-        let reference_protocol = &protocols[0];
-        let reference_sequence_count = reference_protocol.sequences.len();
-        let reference_sequence_lengths: Vec<usize> = reference_protocol
-            .sequences
-            .iter()
-            .map(|seq| seq.data.len())
-            .collect();
-
-        for protocol in &protocols[1..] {
-            if protocol.sequences.len() != reference_sequence_count {
-                return Err(anyhow!("Protocols have different numbers of sequences"));
+        for (i, protocol) in protocols.iter().enumerate() {
+            if protocol.sequences.len() != 1 {
+                // return Err(anyhow!("Protocol {} must have exactly one sequence", i));
             }
 
-            for (i, sequence) in protocol.sequences.iter().enumerate() {
-                if sequence.data.len() != reference_sequence_lengths[i] {
-                    return Err(anyhow!("Sequence lengths do not match across protocols"));
-                }
+            if protocol.sequences[0].data.len() != reference_sequence_length {
+                return Err(anyhow!("Sequence length in protocol {} does not match the reference length", i));
             }
         }
 
@@ -129,6 +136,7 @@ impl ProtocolDetector {
     fn match_protocol(
         &self,
         input: &[Complex32],
+        input_norms: &[f32],
         start_index: usize,
         protocol: &Protocol,
     ) -> (bool, Vec<f32>) {
@@ -141,17 +149,13 @@ impl ProtocolDetector {
                 return (false, correlations);
             }
 
-            let correlation = normalized_dot_product(
-                &input
-                    [start_index + current_offset..start_index + current_offset + sequence_length],
+            let correlation = self.normalized_dot_product(
+                &input[start_index + current_offset..start_index + current_offset + sequence_length],
+                &input_norms[start_index + current_offset],
                 sequence,
             );
 
             correlations.push(correlation);
-            self.debug_echo(&format!(
-                "DEBUG: Protocol: {}, Sequence {}, Correlation: {:.4}, Threshold: {:.4}",
-                protocol.name, seq_index, correlation, sequence.threshold
-            ));
 
             if correlation < sequence.threshold {
                 return (false, correlations);
@@ -163,9 +167,34 @@ impl ProtocolDetector {
         (true, correlations)
     }
 
+    fn normalized_dot_product(
+        &self,
+        seq1: &[Complex32],
+        seq1_norm: &f32,
+        seq2: &Sequence,
+    ) -> f32 {
+        assert_eq!(
+            seq1.len(),
+            seq2.data.len(),
+            "Sequences must have the same length"
+        );
+
+        if *seq1_norm == 0.0 || seq2.norm() == 0.0 {
+            return if *seq1_norm == seq2.norm() { 1.0 } else { 0.0 };
+        }
+
+        let sum_val: Complex32 = seq1
+            .iter()
+            .zip(seq2.data.iter())
+            .map(|(a, b)| a * b.conj())
+            .sum();
+
+        let normalized = sum_val / (*seq1_norm * seq2.norm());
+        normalized.re
+    }
+
     fn debug_echo(&self, message: &str) {
         if self.debug_enabled {
-            //println!("{}", message);
         }
     }
 
@@ -195,29 +224,27 @@ impl ProtocolDetector {
         Ok(())
     }
 }
-
-fn normalized_dot_product(seq1: &[Complex32], seq2: &Sequence) -> f32 {
-    assert_eq!(
-        seq1.len(),
-        seq2.data.len(),
-        "Sequences must have the same length"
-    );
-
-    let norm_seq1 = seq1.iter().map(|x| x.norm_sqr()).sum::<f32>().sqrt();
-    let norm_seq2 = seq2.norm();
-
-    if norm_seq1 == 0.0 || norm_seq2 == 0.0 {
-        return if norm_seq1 == norm_seq2 { 1.0 } else { 0.0 };
+fn calculate_norm_vector(input: &[Complex32], window_length: usize) -> Vec<f32> {
+    let input_len = input.len();
+    if input_len < window_length {
+        return Vec::with_capacity(0);
     }
-
-    let sum_val: Complex32 = seq1
+    let mut norm_vector = Vec::with_capacity(input_len - window_length + 1);
+    
+    let mut window_sum = input[0..window_length]
         .iter()
-        .zip(seq2.data.iter())
-        .map(|(a, b)| a * b.conj())
-        .sum();
-
-    let normalized = sum_val / (norm_seq1 * norm_seq2);
-    normalized.re
+        .map(|x| x.norm_sqr())
+        .sum::<f32>();
+    
+    norm_vector.push(window_sum.sqrt());
+    
+    for i in 1..=(input_len - window_length) {
+        window_sum -= input[i-1].norm_sqr();
+        window_sum += input[i+window_length-1].norm_sqr();
+        norm_vector.push(window_sum.sqrt());
+    }
+    
+    norm_vector
 }
 
 #[async_trait]
@@ -231,7 +258,9 @@ impl Kernel for ProtocolDetector {
     ) -> Result<()> {
         let input = sio.input(0).slice::<Complex32>();
         
-        // Berechne die Output-Slices am Anfang
+        let window_length = self.protocols[0].sequences[0].data.len();
+        let input_norms = calculate_norm_vector(input, window_length);
+        
         let mut output_slices: Vec<&mut [Complex32]> = Vec::new();
         for i in 0..self.protocols.len() {
             output_slices.push(sio.output(i).slice::<Complex32>());
@@ -243,6 +272,28 @@ impl Kernel for ProtocolDetector {
             input.len().saturating_sub(self.total_protocol_length - 1),
             min_output_len
         ).saturating_sub(1);
+        let  mut current_protocol = self.current_protocol.unwrap_or(0);
+        if max_process == 0 && sio.input(0).finished() {
+            
+            let  out= sio.output(current_protocol).slice::<Complex32>();
+            let mut inp = sio.input(0).slice::<Complex32>();
+            let mut len = inp.len();
+            if len > 0 {
+                if out.len() > 0{
+                    out[0] = inp[0];
+                    sio.input(0).consume(1);
+                    sio.output(current_protocol).produce(1); 
+                }
+            }else{
+                self.debug_echo(&format!(
+                    "DEBUG: Input stream finished at index {}",
+                    self.current_index
+                ));
+                io.finished = true;
+            }
+
+        }
+
 
         self.debug_echo(&format!(
             "DEBUG: Processing samples from index {} to {}",
@@ -251,25 +302,13 @@ impl Kernel for ProtocolDetector {
         ));
 
         let mut matches = Vec::new();
-        let current_protocol = self.current_protocol.unwrap_or(0);
 
-        // Füge das aktuelle Protokoll am Anfang hinzu
         matches.push((current_protocol, 0));
 
         for i in 0..max_process {
             let mut protocol_matched = false;
             for (protocol_index, protocol) in self.protocols.iter().enumerate() {
-                let (matched, correlations) = self.match_protocol(&input, i, protocol);
-                self.debug_echo(&format!(
-                    "DEBUG: Index {}, Protocol: {}, Matched: {}",
-                    self.current_index, protocol.name, matched
-                ));
-                for (seq_index, corr) in correlations.iter().enumerate() {
-                    self.debug_echo(&format!(
-                        "DEBUG:   Sequence {}: Correlation = {:.4}, Threshold = {:.4}",
-                        seq_index, corr, protocol.sequences[seq_index].threshold
-                    ));
-                }
+                let (matched, correlations) = self.match_protocol(input, &input_norms, i, protocol);
                 if matched {
                     if protocol_index != current_protocol {
                         matches.push((protocol_index, i));
@@ -277,8 +316,8 @@ impl Kernel for ProtocolDetector {
                             "Switching from {} to {} protocol at index {}",
                             self.protocols[current_protocol].name,
                             protocol.name,
-                            self.current_index + i
-                        ));
+                            self.current_index                         ));
+                        current_protocol = protocol_index;
                         self.current_protocol = Some(protocol_index);
                         sio.output(protocol_index).add_tag(
                             i,
@@ -293,7 +332,6 @@ impl Kernel for ProtocolDetector {
            self.current_index+=1; 
         }
 
-        // Füge das letzte Match hinzu (entweder das aktuelle Protokoll bis zum Ende)
         matches.push((self.current_protocol.unwrap_or(current_protocol), max_process));
 
         let mut output_status = vec![0; self.protocols.len()];
@@ -328,31 +366,9 @@ impl Kernel for ProtocolDetector {
             "DEBUG: Processed {} samples. Current index: {}. Matches found: {}. Current protocol: {}",
             consumed, 
             self.current_index, 
-            matches.len() - 2,  // Subtracting 2 because of the initial and final entries
+            matches.len() - 2,
             self.protocols[self.current_protocol.unwrap_or(0)].name
         ));
-
-        if sio.input(0).finished() {
-            
-            let  out= sio.output(current_protocol).slice::<Complex32>();
-            let mut inp = sio.input(0).slice::<Complex32>();
-            let mut len = inp.len();
-            if len > 0 {
-                if out.len() > 0{
-                    out[0] = inp[0];
-                    sio.input(0).consume(1);
-                    sio.output(current_protocol).produce(1); 
-                }
-
-            }else{
-                self.debug_echo(&format!(
-                    "DEBUG: Input stream finished at index {}",
-                    self.current_index
-                ));
-                io.finished = true;
-            }
-
-        }
 
         Ok(())
     }

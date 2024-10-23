@@ -119,8 +119,8 @@ pub fn create_lora_receiver(
 }
 
 use zigbee::modulator;
-use zigbee::IqDelay;
 use zigbee::ClockRecoveryMm;
+use zigbee::IqDelay;
 
 pub fn create_zigbee_transmitter(mut fg: Flowgraph) -> Result<(usize, usize, Flowgraph)> {
     let mac = fg.add_block(zigbee::Mac::new());
@@ -263,7 +263,7 @@ pub fn load_log_file(filename: &str) -> Result<Vec<String>> {
 }
 const PI: f32 = std::f32::consts::PI;
 
-pub fn generate_zadoff_chu(u: u32, n: u32, q: u32) -> Vec<Complex32> {
+pub fn generate_zadoff_chu(u: u32, n: u32, q: u32, offset: u32) -> Vec<Complex32> {
     if u == 0 || u >= n {
         panic!("u must be in the range 1 <= u < n");
     }
@@ -272,7 +272,7 @@ pub fn generate_zadoff_chu(u: u32, n: u32, q: u32) -> Vec<Complex32> {
     }
 
     let cf = n % 2;
-    (0..n)
+    let sequence: Vec<Complex32> = (0..n)
         .map(|k| {
             let k = k as f32;
             let n = n as f32;
@@ -282,6 +282,15 @@ pub fn generate_zadoff_chu(u: u32, n: u32, q: u32) -> Vec<Complex32> {
             let exponent = -PI * u * k * (k + cf + 2.0 * q) / n;
             Complex32::new(0.0, exponent).exp()
         })
+        .collect();
+
+    // Rotate the sequence based on the offset
+    let offset = offset as usize % n as usize;
+    sequence
+        .into_iter()
+        .cycle()
+        .skip(offset)
+        .take(n as usize)
         .collect()
 }
 

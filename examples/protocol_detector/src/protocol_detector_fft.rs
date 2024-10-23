@@ -163,10 +163,9 @@ impl ProtocolDetectorFFT {
         }
 
         norms
-        // .iter().map(|&sum| sum.sqrt()).collect()
     }
 
-    fn fft_corr_normalized(&mut self, window: &[Complex32], norm_vector: &[f32]) -> Option<usize> {
+    fn fft_corr_normalized(&mut self, window: &[Complex32], norm_vector: &[f32]) -> Vec<usize> {
         let n = window.len();
         let mut window_fft: Vec<Complex<f32>> =
             window.iter().map(|&c| Complex::new(c.re, c.im)).collect();
@@ -178,8 +177,9 @@ impl ProtocolDetectorFFT {
         self.ifft_plan.process(&mut window_fft);
         self.total_processing_time += start_time.elapsed();
         let sequence_norm = self.sync_sequence.sequence.norm();
-        let norm_factor = n as f32; // Skalierungsfaktor als float speichern
+        let norm_factor = n as f32;
 
+        let mut matches = Vec::new();
         for (i, &x) in window_fft
             .iter()
             .take(self.sync_sequence.sequence.data.len())
@@ -191,12 +191,10 @@ impl ProtocolDetectorFFT {
                 (x.re / (norm_vector[i] * sequence_norm * norm_factor))
             };
             if normalized_corr >= self.sync_sequence.sequence.threshold {
-                // self.total_processing_time += start_time.elapsed();
-                return Some(i);
+                matches.push(i);
             }
         }
-        // self.total_processing_time += start_time.elapsed();
-        None
+        matches
     }
 
     fn match_protocols(
@@ -270,7 +268,6 @@ impl Kernel for ProtocolDetectorFFT {
         _m: &mut MessageIo<Self>,
         _b: &mut BlockMeta,
     ) -> Result<()> {
-        // let start_time = Instant::now();
         let input = sio.input(0).slice::<Complex32>();
         let mut output_slices: Vec<&mut [Complex32]> = Vec::new();
         for i in 0..self.protocols.len() {
@@ -301,7 +298,8 @@ impl Kernel for ProtocolDetectorFFT {
             let window = &input[i..i + window_length];
             let norm_vector: Vec<f32> =
                 self.update_norm_vector(window, self.sync_sequence.sequence.data.len());
-            if let Some(hit) = self.fft_corr_normalized(window, &norm_vector) {
+            let sync_matches = self.fft_corr_normalized(window, &norm_vector);
+            for hit in sync_matches {
                 sync_hits.push(i + hit);
                 let seq_start = i + hit + self.sequence_lengths[0];
                 if let Some(detected_seq) =
@@ -334,12 +332,14 @@ impl Kernel for ProtocolDetectorFFT {
             }
 
             sio.input(0).consume(consumed);
+            // sio.input(0).consume(consumed + 1);
             for (protocol_index, &produced) in output_status.iter().enumerate() {
                 sio.output(protocol_index).produce(produced);
             }
         }
         if sio.input(0).finished() {
             let input = sio.input(0).slice::<Complex32>();
+            println!("Input length: {}", input.len());
             if input.len() == 0 {
                 io.finished = true;
                 if self.debug_enabled {
@@ -347,7 +347,12 @@ impl Kernel for ProtocolDetectorFFT {
                         eprintln!("Fehler beim Loggen der Gesamtverarbeitungszeit: {}", e);
                     }
                 }
-            } else {
+            } else if input
+                .len()
+                .saturating_sub((1.5 * window_length as f32).ceil() as usize - 1)
+                <= 1
+            {
+                // } else {
                 let current_protocol = self.current_protocol.unwrap_or(0);
                 let mut current_output = sio.output(current_protocol).slice::<Complex32>();
                 if current_output.len() >= 1 {
@@ -361,7 +366,6 @@ impl Kernel for ProtocolDetectorFFT {
 
         self.absolute_index += consumed;
 
-        // self.total_processing_time += start_time.elapsed();
         Ok(())
     }
 }

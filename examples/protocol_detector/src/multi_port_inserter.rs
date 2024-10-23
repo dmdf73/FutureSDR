@@ -25,6 +25,7 @@ pub struct MultiPortInserter {
     consumed_input: usize,
     insertion_index: usize,
     samples_after_sequence: usize,
+    port_order: Vec<usize>,
 }
 
 impl MultiPortInserter {
@@ -54,7 +55,7 @@ impl MultiPortInserter {
                 padded_seq
             })
             .collect();
-
+        let ports_length = ports.len();
         Block::new(
             BlockMetaBuilder::new("MultiPortInserter").build(),
             {
@@ -76,6 +77,7 @@ impl MultiPortInserter {
                 consumed_input: 0,
                 insertion_index: 0,
                 samples_after_sequence: 0,
+                port_order: (0..ports_length).collect(),
             },
         )
     }
@@ -101,24 +103,19 @@ impl Kernel for MultiPortInserter {
         if all_inputs_empty_and_finished {
             debug_print("All input buffers are empty and finished. Marking block as finished.");
             io.finished = true;
-            // If there's an active output, you might want to send a final empty buffer
-            if let Some(current_port) = self.current_port {
-                let output = sio.output(0).slice::<Complex32>();
-                sio.output(0).produce(0); // Produce an empty buffer
-                debug_print("Sent final empty buffer to output.");
-            }
             debug_print("=== End of work cycle (finished) ===\n");
             return Ok(());
         }
 
         if self.current_port.is_none() {
             debug_print("Searching for a matching tag...");
-            for (i, (port_name, search_string)) in self.ports.iter().enumerate() {
-                let input = sio.input(i).slice::<Complex32>();
-                let tags = sio.input(i).tags();
+            for &port_index in &self.port_order {
+                let (port_name, search_string) = &self.ports[port_index];
+                let input = sio.input(port_index).slice::<Complex32>();
+                let tags = sio.input(port_index).tags();
                 debug_print(&format!(
                     "Checking port {} ({}): {} tags found",
-                    i,
+                    port_index,
                     port_name,
                     tags.len()
                 ));
@@ -142,16 +139,21 @@ impl Kernel for MultiPortInserter {
                 }) {
                     debug_print(&format!(
                         "Switching to port {} ({}) with sequence length {}",
-                        i, port_name, len
+                        port_index, port_name, len
                     ));
-                    self.current_port = Some(i);
-                    self.current_sequence = Some(i);
+                    self.current_port = Some(port_index);
+                    self.current_sequence = Some(port_index);
                     self.inserting_sequence = true;
                     self.sequence_index = 0;
                     self.packet_length = len;
                     self.consumed_input = 0;
                     self.insertion_index = index;
                     self.samples_after_sequence = 0;
+
+                    // Update port order
+                    self.port_order.retain(|&p| p != port_index);
+                    self.port_order.push(port_index);
+
                     break;
                 }
             }

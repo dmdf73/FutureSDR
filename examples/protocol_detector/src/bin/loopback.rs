@@ -116,7 +116,12 @@ fn main() -> Result<()> {
     fg.connect_stream(inserter_block, "out", noise, "in")?;
 
     // 3. ProtocolDetector
-    let detector = ProtocolDetector::new(vec![wifi_protocol], true, Some("matches.log".to_owned()));
+    let detector = ProtocolDetector::new(
+        vec![wifi_protocol],
+        None,
+        true,
+        Some("matches.log".to_owned()),
+    );
     let detector_block = fg.add_block(detector);
     fg.connect_stream(noise, "out", detector_block, "in")?;
 

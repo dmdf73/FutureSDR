@@ -12,7 +12,6 @@ use std::time::Instant;
 
 fn generate_protocols(include_pad: bool) -> Vec<Protocol> {
     let pad = vec![Complex32::new(0.0, 0.0); 30]; // 30 Nullen für das Padding
-
     vec![
         Protocol {
             name: "zc".to_string(),
@@ -24,25 +23,19 @@ fn generate_protocols(include_pad: bool) -> Vec<Protocol> {
             } else {
                 Sequence::new([ZC_63.to_vec(), ZC_63.to_vec()].concat(), 0.65)
             },
-            sequences: vec![
-                Sequence::new(ZC_63.to_vec(), 0.65),
-                Sequence::new(ZC_63.to_vec(), 0.65),
-            ],
+            sequences: vec![Sequence::new(ZC_63.to_vec(), 0.65)],
         },
         Protocol {
             name: "gold".to_string(),
             sequence: if include_pad {
                 Sequence::new(
-                    [pad.clone(), GOLD_63.to_vec(), GOLD_63.to_vec(), pad.clone()].concat(),
+                    [pad.clone(), ZC_63.to_vec(), GOLD_63.to_vec(), pad.clone()].concat(),
                     0.65,
                 )
             } else {
-                Sequence::new([GOLD_63.to_vec(), GOLD_63.to_vec()].concat(), 0.65)
+                Sequence::new([ZC_63.to_vec(), GOLD_63.to_vec()].concat(), 0.65)
             },
-            sequences: vec![
-                Sequence::new(GOLD_63.to_vec(), 0.65),
-                Sequence::new(GOLD_63.to_vec(), 0.65),
-            ],
+            sequences: vec![Sequence::new(GOLD_63.to_vec(), 0.65)],
         },
     ]
 }
@@ -130,6 +123,7 @@ mod tests {
 
         let detector = ProtocolDetector::new(
             protocols_for_detector,
+            Option::Some(Sequence::new([ZC_63.to_vec()].concat(), 0.65)),
             true,
             std::option::Option::Some("matches.log".to_owned()),
         );

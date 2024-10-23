@@ -16,7 +16,11 @@ use futuresdr::blocks::*;
 use futuresdr::futures::channel::mpsc;
 use futuresdr::futures::StreamExt;
 use protocol_detector::{
-    generate_zadoff_chu, MultiPortInserter, Protocol, ProtocolDetectorFFT, Sequence,
+    generate_zadoff_chu,
+    MultiPortInserter,
+    Protocol,
+    ProtocolDetectorFFT,
+    Sequence,
     // SimpleTagInserter,
 };
 use rand_distr::{Distribution, Normal};
@@ -35,7 +39,7 @@ const PAD_TAIL: usize = 100;
 #[derive(Parser, Debug)]
 #[clap(version)]
 struct Args {
-    #[clap(long, default_value_t = 0.1)]
+    #[clap(long, default_value_t = 0.001)]
     tx_interval: f32,
     #[clap(long, value_enum, default_value_t = SpreadingFactor::SF7)]
     spreading_factor: SpreadingFactor,
@@ -56,10 +60,10 @@ fn main() -> Result<()> {
 
     let fg = Flowgraph::new();
 
-    let sync_sequence = generate_zadoff_chu(11, 64, 0);
-    let wifi_sequence = generate_zadoff_chu(17, 64, 0);
-    let lora_sequence = generate_zadoff_chu(23, 64, 0);
-    let zigbee_sequence = generate_zadoff_chu(25, 64, 0);
+    let sync_sequence = generate_zadoff_chu(11, 64, 0, 0);
+    let wifi_sequence = generate_zadoff_chu(17, 64, 0, 0);
+    let lora_sequence = generate_zadoff_chu(23, 64, 0, 0);
+    let zigbee_sequence = generate_zadoff_chu(25, 64, 0, 0);
 
     let wifi_protocol = Protocol {
         name: "wifi".to_string(),
@@ -78,7 +82,10 @@ fn main() -> Result<()> {
 
     let zigbee_protocol = Protocol {
         name: "zigbee".to_string(),
-        sequence: Sequence::new([sync_sequence.clone(), zigbee_sequence.clone()].concat(), 0.7),
+        sequence: Sequence::new(
+            [sync_sequence.clone(), zigbee_sequence.clone()].concat(),
+            0.7,
+        ),
         sequences: vec![Sequence::new(zigbee_sequence.clone(), 0.7)],
     };
 
@@ -100,7 +107,12 @@ fn main() -> Result<()> {
     let wifi_combined = [sync_sequence.clone(), wifi_sequence.clone()].concat();
     let lora_combined = [sync_sequence.clone(), lora_sequence.clone()].concat();
     let zigbee_combined = [sync_sequence.clone(), zigbee_sequence.clone()].concat();
-    let inserter = MultiPortInserter::new(ports, vec![wifi_combined, lora_combined, zigbee_combined], 30, 30);
+    let inserter = MultiPortInserter::new(
+        ports,
+        vec![wifi_combined, lora_combined, zigbee_combined],
+        30,
+        30,
+    );
     let inserter_block = fg.add_block(inserter);
     println!("Added block with ID: {}", inserter_block);
     let mut size = 4096;
@@ -133,7 +145,7 @@ fn main() -> Result<()> {
         Circular::with_size(prefix_out_size),
     )?;
 
-    let normal = Normal::new(0.0f32, 0.001).unwrap();
+    let normal = Normal::new(0.0f32, 0.1).unwrap();
     let noise = fg.add_block(Apply::new(move |i: &Complex32| -> Complex32 {
         let re = normal.sample(&mut rand::thread_rng());
         let imag = normal.sample(&mut rand::thread_rng());
@@ -179,7 +191,6 @@ fn main() -> Result<()> {
     let (zigbee_tx_frame, zigbee_rx_frame) = mpsc::channel::<Pmt>(100);
     let message_pipe = fg.add_block(MessagePipe::new(zigbee_tx_frame));
     fg.connect_message(zigbee_rx, "out", message_pipe, "in")?;
-
 
     let (_fg, mut handle) = rt.start_sync(fg);
     rt.spawn_background(async move {
@@ -248,7 +259,6 @@ fn main() -> Result<()> {
             }
         }
     });
-
 
     Ok(())
 }
